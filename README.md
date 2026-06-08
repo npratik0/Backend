@@ -24,14 +24,15 @@ Tech Stack
 Project Structure
 
 src/
-├ config/ Database configuration
-├ controllers/ Authentication and user logic
-├middleware/ JWT authentication middleware
-├ models/ Sequelize models
-├ routes/ API routes
-├ utils/ Helper functions (hash, jwt, mailer)
-├ app.ts Express app setup
-└ server.ts Server entry point
+│
+├── config/           # Database configuration
+├── controllers/      # Auth & user controllers
+├── middleware/       # JWT authentication middleware
+├── models/           # Sequelize models
+├── routes/           # API routes
+├── utils/            # Helper functions (hash, jwt, mailer)
+├── app.ts            # Express app setup
+└── server.ts         # Server entry point
 
 Installation and Setup
 
