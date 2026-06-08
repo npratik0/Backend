@@ -1,7 +1,6 @@
 import dotenv from "dotenv";
 import app from "./app";
 import { connectDB, sequelize } from "./config/db";
-import "./models/user.model"; // IMPORTANT: registers model
 
 dotenv.config();
 

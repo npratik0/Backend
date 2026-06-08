@@ -89,12 +89,10 @@ export const login = async (req:Request, res:Response) => {
         }
 
         const accesstoken = generateToken(user.id);
-        // const refreshtoken = generateRefreshToken(user.id);
 
         return res.status(200).json({
             message: "Login Sucessfull",
             accesstoken: accesstoken,
-            // refreshtoken: refreshtoken,
             user: {
                 id: user.id,
                 fullName: user.fullName,
@@ -253,39 +251,3 @@ export const resetPassword = async (req: any, res: any) => {
 
 
 
-
-// export const refreshToken = async (req: any, res: any) => {
-//   try {
-//     const { refreshToken } = req.body;
-
-//     if (!refreshToken) {
-//       return res.status(401).json({ message: "No refresh token provided" });
-//     }
-
-//     // verify refresh token
-//     const decoded: any = jwt.verify(
-//       refreshToken,
-//       process.env.JWT_REFRESH_SECRET as string
-//     );
-
-//     const user = await User.findByPk(decoded.userId);
-
-//     if (!user || user.refreshToken !== refreshToken) {
-//       return res.status(403).json({ message: "Invalid refresh token" });
-//     }
-
-//     // generate new tokens
-//     const newAccessToken = generateAccessToken(user.id);
-//     const newRefreshToken = generateRefreshToken(user.id);
-
-//     // update DB
-//     await user.update({ refreshToken: newRefreshToken });
-
-//     return res.json({
-//       accessToken: newAccessToken,
-//       refreshToken: newRefreshToken,
-//     });
-//   } catch (error) {
-//     return res.status(403).json({ message: "Token expired or invalid" });
-//   }
-// };
