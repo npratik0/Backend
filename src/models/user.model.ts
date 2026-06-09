@@ -7,6 +7,7 @@ export class User extends Model {
   public email!: string;
   public phoneNumber!: string;
   public password!: string;
+  public refreshToken?: string;
 }
 
 User.init(
@@ -34,10 +35,10 @@ User.init(
       type: DataTypes.STRING,
       allowNull: false,
     },
-    // refreshToken: {
-    // type: DataTypes.TEXT,
-    // allowNull: true,
-    // },
+    refreshToken: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    },
   },
   {
     sequelize,

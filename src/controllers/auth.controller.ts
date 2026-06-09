@@ -89,10 +89,15 @@ export const login = async (req:Request, res:Response) => {
         }
 
         const accesstoken = generateToken(user.id);
+        const refreshToken = generateRefreshToken(user.id);
+
+    
+        await user.update({ refreshToken });
 
         return res.status(200).json({
             message: "Login Sucessfull",
             accesstoken: accesstoken,
+            refreshtoken: refreshToken,
             user: {
                 id: user.id,
                 fullName: user.fullName,
@@ -238,6 +243,51 @@ export const resetPassword = async (req: any, res: any) => {
   }
 };
 
+
+
+export const refreshAccessToken = async (req: Request, res: Response) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(401).json({ message: "Refresh token required" });
+    }
+
+    let decoded: any;
+    try {
+      decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!);
+    } catch (err) {
+      return res.status(403).json({ message: "Invalid or expired refresh token" });
+    }
+
+    const user = await User.findOne({
+      where: { id: decoded.userId, refreshToken },
+    });
+
+    if (!user) {
+      return res.status(403).json({ message: "Refresh token not recognized" });
+    }
+
+    const newAccessToken = generateToken(user.id);
+
+    return res.status(200).json({ accesstoken: newAccessToken });
+  } catch (error) {
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export const logout = async (req: any, res: any) => {
+  try{
+    const userId = req.user.userId;
+
+    await User.update({refreshAccessToken:null}, {where: {id: userId}});
+
+  }catch(error){
+    return res.status(500).json({
+      message: "Internal Server Error"
+    })
+  }
+}
 
 
 
