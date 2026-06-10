@@ -8,6 +8,7 @@ export class User extends Model {
   public phoneNumber!: string;
   public password!: string;
   public refreshToken?: string;
+  public role!: 'user'| 'admin' | 'superadmin';
 }
 
 User.init(
@@ -39,6 +40,11 @@ User.init(
     type: DataTypes.TEXT,
     allowNull: true,
     },
+    role: {
+      type: DataTypes.ENUM('user', 'admin', 'superadmin'),
+      allowNull: false,
+      defaultValue: 'user'
+    }
   },
   {
     sequelize,

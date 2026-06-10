@@ -40,7 +40,8 @@ export const register = async (req:Request, res:Response) => {
             fullName,
             email,
             phoneNumber,
-            password: hashedPassword
+            password: hashedPassword,
+            role: 'user'
         })
 
         return res.status(201).json({
@@ -50,10 +51,9 @@ export const register = async (req:Request, res:Response) => {
                 fullName: user.fullName,
                 email: user.email,
                 phoneNumber: user.phoneNumber,
+                role: user.role
             }
         })
-
-
 
     }catch(error){
         return res.status(500).json({
@@ -89,8 +89,8 @@ export const login = async (req:Request, res:Response) => {
             })
         }
 
-        const accesstoken = generateToken(user.id);
-        const refreshToken = generateRefreshToken(user.id);
+        const accesstoken = generateToken(user.id, user.role);
+        const refreshToken = generateRefreshToken(user.id, user.role);
 
     
         await user.update({ refreshToken });
@@ -110,7 +110,8 @@ export const login = async (req:Request, res:Response) => {
                 id: user.id,
                 fullName: user.fullName,
                 email: user.email,
-                phoneNumber: user.phoneNumber
+                phoneNumber: user.phoneNumber,
+                role: user.role
             }
             
         })
@@ -362,7 +363,7 @@ export const refreshAccessToken = async (req: Request, res: Response) => {
       return res.status(403).json({ message: "Refresh token not recognized" });
     }
 
-    const newAccessToken = generateToken(user.id);
+    const newAccessToken = generateToken(user.id, user.role);
 
     return res.status(200).json({ accesstoken: newAccessToken });
   } catch (error) {

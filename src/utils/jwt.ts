@@ -20,9 +20,9 @@ if (!refreshSecret) {
   throw new Error("JWT_REFRESH_SECRET is not defined in .env");
 }
 
-export const generateToken = (userId: number) => {
+export const generateToken = (userId: number, role: string) => {
   return jwt.sign(
-    { userId },
+    { userId, role },
     secret,
     {
       expiresIn: "60m",
@@ -30,9 +30,9 @@ export const generateToken = (userId: number) => {
   );
 };
 
-export const generateRefreshToken = (userId: number) => {
+export const generateRefreshToken = (userId: number, role: string) => {
   return jwt.sign(
-    { userId },
+    { userId, role },
     refreshSecret,
     {
       expiresIn: "7d",
