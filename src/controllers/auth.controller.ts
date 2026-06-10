@@ -5,6 +5,7 @@ import {generateRefreshToken, generateToken} from '../utils/jwt';
 import { access } from 'node:fs';
 import jwt from 'jsonwebtoken';
 import { sendEmail } from '../utils/mailer';
+import { Otp } from '../models/otp.models';
 
 export const register = async (req:Request, res:Response) => {
     try{
@@ -142,104 +143,190 @@ export const getProfile = async (req: any, res: any) => {
     }
 }
 
-const otpStore = new Map<string, { otp: string; expires: number }>();
+// const otpStore = new Map<string, { otp: string; expires: number }>();
+
+
+const OTP_EXPIRY_MINUTES = 10;
+
+const createAndSendOtp = async (email: string): Promise<void> => {
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+  await Otp.destroy({ where: { email } });
+  await Otp.create({ email, otp, expiresAt });
+
+  await sendEmail(
+    email,
+    "Password Reset OTP",
+    `Your OTP is: ${otp}. It is valid for ${OTP_EXPIRY_MINUTES} minutes.`
+  );
+};
+
+// export const forgotPassword = async (req: any, res: any) => {
+//   try {
+//     const { email } = req.body;
+
+//     if (!email) {
+//       return res.status(400).json({ message: "Email is required" });
+//     }
+
+//     const user = await User.findOne({ where: { email } });
+
+//     if (!user) {
+//       return res.status(404).json({ message: "User not found" });
+//     }
+
+//     // Generate OTP
+//     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+//     // Store OTP (valid for 10 minutes)
+//     otpStore.set(email, {
+//       otp,
+//       expires: Date.now() + 10 * 60 * 1000,
+//     });
+
+//     // Send email
+//     await sendEmail(
+//       email,
+//       "Password Reset OTP",
+//       `Your OTP is: ${otp}. It is valid for 10 minutes.`
+//     );
+
+//     return res.json({
+//       message: "OTP sent to email",
+//     });
+//   } catch (error) {
+//     return res.status(500).json({ message: "Server error", error });
+//   }
+// };
 
 export const forgotPassword = async (req: any, res: any) => {
   try {
     const { email } = req.body;
 
-    if (!email) {
-      return res.status(400).json({ message: "Email is required" });
-    }
+    if (!email) return res.status(400).json({ message: "Email is required" });
 
     const user = await User.findOne({ where: { email } });
+    if (!user) return res.status(404).json({ message: "User not found" });
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    await createAndSendOtp(email);
 
-    // Generate OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
-    // Store OTP (valid for 10 minutes)
-    otpStore.set(email, {
-      otp,
-      expires: Date.now() + 10 * 60 * 1000,
-    });
-
-    // Send email
-    await sendEmail(
-      email,
-      "Password Reset OTP",
-      `Your OTP is: ${otp}. It is valid for 10 minutes.`
-    );
-
-    return res.json({
-      message: "OTP sent to email",
-    });
+    return res.json({ message: "OTP sent to email" });
   } catch (error) {
     return res.status(500).json({ message: "Server error", error });
   }
 };
 
+export const resendOtp = async (req: any, res: any) => {
+  try {
+    const { email } = req.body;
 
+    if (!email) return res.status(400).json({ message: "Email is required" });
+
+    const user = await User.findOne({ where: { email } });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    await createAndSendOtp(email);
+
+    return res.json({ message: "OTP resent to email" });
+  } catch (error) {
+    return res.status(500).json({ message: "Server error", error });
+  }
+};
+
+// export const resetPassword = async (req: any, res: any) => {
+//   try {
+//     const { email, otp, newPassword } = req.body;
+
+//     if (!email || !otp || !newPassword) {
+//       return res.status(400).json({
+//         message: "All fields are required",
+//       });
+//     }
+
+//     const record = otpStore.get(email);
+
+//     if (!record) {
+//       return res.status(400).json({
+//         message: "OTP not found or expired",
+//       });
+//     }
+
+//     if (record.expires < Date.now()) {
+//       otpStore.delete(email);
+//       return res.status(400).json({
+//         message: "OTP expired",
+//       });
+//     }
+
+//     if (record.otp !== otp) {
+//       return res.status(400).json({
+//         message: "Invalid OTP",
+//       });
+//     }
+
+//     const user = await User.findOne({ where: { email } });
+
+//     if (!user) {
+//       return res.status(404).json({
+//         message: "User not found",
+//       });
+//     }
+
+//     // Hash new password
+//     const hashed = await hashPassword(newPassword);
+
+//     await user.update({
+//       password: hashed,
+//     });
+
+//     // remove OTP after success
+//     otpStore.delete(email);
+
+//     return res.json({
+//       message: "Password reset successful",
+//     });
+//   } catch (error) {
+//     return res.status(500).json({
+//       message: "Server error",
+//     });
+//   }
+// };
 
 export const resetPassword = async (req: any, res: any) => {
   try {
     const { email, otp, newPassword } = req.body;
 
     if (!email || !otp || !newPassword) {
-      return res.status(400).json({
-        message: "All fields are required",
-      });
+      return res.status(400).json({ message: "All fields are required" });
     }
 
-    const record = otpStore.get(email);
+    const record = await Otp.findOne({ where: { email } });
 
     if (!record) {
-      return res.status(400).json({
-        message: "OTP not found or expired",
-      });
+      return res.status(400).json({ message: "OTP not found or already used" });
     }
 
-    if (record.expires < Date.now()) {
-      otpStore.delete(email);
-      return res.status(400).json({
-        message: "OTP expired",
-      });
+    if (new Date() > record.expiresAt) {
+      await record.destroy();
+      return res.status(400).json({ message: "OTP expired" });
     }
 
     if (record.otp !== otp) {
-      return res.status(400).json({
-        message: "Invalid OTP",
-      });
+      return res.status(400).json({ message: "Invalid OTP" });
     }
 
     const user = await User.findOne({ where: { email } });
+    if (!user) return res.status(404).json({ message: "User not found" });
 
-    if (!user) {
-      return res.status(404).json({
-        message: "User not found",
-      });
-    }
-
-    // Hash new password
     const hashed = await hashPassword(newPassword);
+    await user.update({ password: hashed });
 
-    await user.update({
-      password: hashed,
-    });
+    await record.destroy();
 
-    // remove OTP after success
-    otpStore.delete(email);
-
-    return res.json({
-      message: "Password reset successful",
-    });
+    return res.json({ message: "Password reset successful" });
   } catch (error) {
-    return res.status(500).json({
-      message: "Server error",
-    });
+    return res.status(500).json({ message: "Server error" });
   }
 };
 
