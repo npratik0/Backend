@@ -95,6 +95,13 @@ export const login = async (req:Request, res:Response) => {
     
         await user.update({ refreshToken });
 
+        res.cookie("refreshToken", refreshToken,{
+          httpOnly: true,
+          secure: false, // set to true in production with HTTPS
+          sameSite: "strict",
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+        })
+
         return res.status(200).json({
             message: "Login Sucessfull",
             accesstoken: accesstoken,
@@ -334,7 +341,7 @@ export const resetPassword = async (req: any, res: any) => {
 
 export const refreshAccessToken = async (req: Request, res: Response) => {
   try {
-    const { refreshToken } = req.body;
+    const { refreshToken } = req.cookies.refreshToken;
 
     if (!refreshToken) {
       return res.status(401).json({ message: "Refresh token required" });
@@ -368,6 +375,8 @@ export const logout = async (req: any, res: any) => {
     const userId = req.user.userId;
 
     await User.update({refreshToken:null}, {where: {id: userId}});
+
+    res.clearCookie("refreshToken");
 
     res.status(200).json({
       message: "Logout Sucessfull"
