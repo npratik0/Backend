@@ -70,7 +70,6 @@ export const updateUserRole = async (req: any, res: any) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // superadmin cannot downgrade another superadmin
     if (user.role === 'superadmin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Cannot modify a superadmin' });
     }

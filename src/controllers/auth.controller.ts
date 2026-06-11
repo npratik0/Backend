@@ -109,7 +109,7 @@ export const login = async (req:Request, res:Response) => {
         // set both sessionId and refreshToken in cookies
         res.cookie("sessionId", sessionId, {
           httpOnly: true,
-          secure: false,         // true in production
+          secure: false,       
           sameSite: "strict",
           maxAge: 7 * 24 * 60 * 60 * 1000,
         });
@@ -119,7 +119,7 @@ export const login = async (req:Request, res:Response) => {
 
         res.cookie("refreshToken", refreshToken,{
           httpOnly: true,
-          secure: false, // set to true in production with HTTPS
+          secure: false, 
           sameSite: "strict",
           maxAge: 7 * 24 * 60 * 60 * 1000,
         })
@@ -408,7 +408,6 @@ export const refreshAccessToken = async (req: Request, res: Response) => {
       where: { id: sessionId, refreshToken },
     });
 
-    // session not found → possible token theft → clear cookies
     if (!session) {
       res.clearCookie("sessionId");
       res.clearCookie("refreshToken");

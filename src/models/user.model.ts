@@ -9,6 +9,7 @@ export class User extends Model {
   public password!: string;
   // public refreshToken?: string;
   public role!: 'user'| 'admin' | 'superadmin';
+  public googleId!: string | null;
 }
 
 User.init(
@@ -29,12 +30,12 @@ User.init(
     },
     phoneNumber: {
       type: DataTypes.STRING,
-      allowNull: false,
+      allowNull: true,
       unique: true,
     },
     password: {
       type: DataTypes.STRING,
-      allowNull: false,
+      allowNull: true,
     },
     // refreshToken: {
     // type: DataTypes.TEXT,
@@ -44,6 +45,11 @@ User.init(
       type: DataTypes.ENUM('user', 'admin', 'superadmin'),
       allowNull: false,
       defaultValue: 'user'
+    },
+    googleId: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      unique: true
     }
   },
   {
