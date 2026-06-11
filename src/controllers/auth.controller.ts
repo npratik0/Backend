@@ -2,10 +2,11 @@ import {Request, response, Response} from 'express';
 import {User} from '../models/user.model';
 import {comparePassword, hashPassword} from '../utils/hash';
 import {generateRefreshToken, generateToken} from '../utils/jwt';
-import { access } from 'node:fs';
 import jwt from 'jsonwebtoken';
 import { sendEmail } from '../utils/mailer';
 import { Otp } from '../models/otp.models';
+import { Session } from '../models/session.model';
+import { v4 as uuidv4 } from 'uuid';
 
 export const register = async (req:Request, res:Response) => {
     try{
@@ -92,8 +93,29 @@ export const login = async (req:Request, res:Response) => {
         const accesstoken = generateToken(user.id, user.role);
         const refreshToken = generateRefreshToken(user.id, user.role);
 
+        const sessionId = uuidv4();
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+        // store session in DB
+        await Session.create({
+          id: sessionId,
+          userId: user.id,
+          refreshToken,
+          ip: req.ip,
+          device: req.headers["user-agent"] || "unknown",
+          expiresAt,
+        });
+
+        // set both sessionId and refreshToken in cookies
+        res.cookie("sessionId", sessionId, {
+          httpOnly: true,
+          secure: false,         // true in production
+          sameSite: "strict",
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+        });
+
     
-        await user.update({ refreshToken });
+        // await user.update({ refreshToken });
 
         res.cookie("refreshToken", refreshToken,{
           httpOnly: true,
@@ -105,7 +127,7 @@ export const login = async (req:Request, res:Response) => {
         return res.status(200).json({
             message: "Login Sucessfull",
             accesstoken: accesstoken,
-            refreshtoken: refreshToken,
+            // refreshtoken: refreshToken,
             user: {
                 id: user.id,
                 fullName: user.fullName,
@@ -340,47 +362,157 @@ export const resetPassword = async (req: any, res: any) => {
 
 
 
+// export const refreshAccessToken = async (req: Request, res: Response) => {
+//   try {
+//     const { refreshToken } = req.cookies.refreshToken;
+
+//     if (!refreshToken) {
+//       return res.status(401).json({ message: "Refresh token required" });
+//     }
+
+//     let decoded: any;
+//     try {
+//       decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!);
+//     } catch (err) {
+//       return res.status(403).json({ message: "Invalid or expired refresh token" });
+//     }
+
+//     const user = await User.findOne({
+//       where: { id: decoded.userId, refreshToken },
+//     });
+
+//     if (!user) {
+//       return res.status(403).json({ message: "Refresh token not recognized" });
+//     }
+
+//     const newAccessToken = generateToken(user.id, user.role);
+
+//     return res.status(200).json({ accesstoken: newAccessToken });
+//   } catch (error) {
+//     return res.status(500).json({ message: "Internal Server Error" });
+//   }
+// };
+
+// Refressh Token with Token Rotation and Session Management
 export const refreshAccessToken = async (req: Request, res: Response) => {
   try {
-    const { refreshToken } = req.cookies.refreshToken;
+    const sessionId = req.cookies.sessionId;
+    const refreshToken = req.cookies.refreshToken;
 
-    if (!refreshToken) {
-      return res.status(401).json({ message: "Refresh token required" });
+    if (!sessionId || !refreshToken) {
+      return res.status(401).json({ message: "No session found" });
     }
 
+    // find session in DB
+    const session = await Session.findOne({
+      where: { id: sessionId, refreshToken },
+    });
+
+    // session not found → possible token theft → clear cookies
+    if (!session) {
+      res.clearCookie("sessionId");
+      res.clearCookie("refreshToken");
+      return res.status(403).json({ message: "Invalid session. Please login again" });
+    }
+
+    // session expired
+    if (new Date() > session.expiresAt) {
+      await session.destroy();
+      res.clearCookie("sessionId");
+      res.clearCookie("refreshToken");
+      return res.status(403).json({ message: "Session expired. Please login again" });
+    }
+
+    // verify refresh token
     let decoded: any;
     try {
       decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!);
     } catch (err) {
-      return res.status(403).json({ message: "Invalid or expired refresh token" });
+      await session.destroy();
+      res.clearCookie("sessionId");
+      res.clearCookie("refreshToken");
+      return res.status(403).json({ message: "Invalid token. Please login again" });
     }
 
-    const user = await User.findOne({
-      where: { id: decoded.userId, refreshToken },
+    const user = await User.findByPk(decoded.userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // delete old session
+    await session.destroy();
+
+    // generate new tokens
+    const newAccessToken = generateToken(user.id, user.role);
+    const newRefreshToken = generateRefreshToken(user.id, user.role);
+    const newSessionId = uuidv4();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    // create new session
+    await Session.create({
+      id: newSessionId,
+      userId: user.id,
+      refreshToken: newRefreshToken,
+      ip: req.ip,
+      device: req.headers["user-agent"] || "unknown",
+      expiresAt,
     });
 
-    if (!user) {
-      return res.status(403).json({ message: "Refresh token not recognized" });
-    }
+    // set new cookies
+    res.cookie("sessionId", newSessionId, {
+      httpOnly: true,
+      secure: false,
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
 
-    const newAccessToken = generateToken(user.id, user.role);
+    res.cookie("refreshToken", newRefreshToken, {
+      httpOnly: true,
+      secure: false,
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
 
-    return res.status(200).json({ accesstoken: newAccessToken });
+    return res.status(200).json({ accessToken: newAccessToken });
   } catch (error) {
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
+
 export const logout = async (req: any, res: any) => {
+  try{
+    const sessionId = req.cookies.sessionId;
+
+    if(sessionId){
+      await Session.destroy({where: {id:sessionId}});
+    }
+
+    res.clearCookie("sessionId");
+    res.clearCookie("refreshToken");
+
+    return res.json({
+      message: "Logged out successfully"
+    })
+
+  }catch(error){
+    return res.status(500).json({
+      message: "Internal Server Error"
+    })
+  }
+}
+
+export const logoutAll = async (req: any, res: any) => {
   try{
     const userId = req.user.userId;
 
-    await User.update({refreshToken:null}, {where: {id: userId}});
+    await Session.destroy({where: {userId}});
 
+    res.clearCookie("sessionId");
     res.clearCookie("refreshToken");
 
-    res.status(200).json({
-      message: "Logout Sucessfull"
+    return res.json({
+      message: "Logged out from all devices successfully"
     })
 
   }catch(error){

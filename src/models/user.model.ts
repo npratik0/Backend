@@ -7,7 +7,7 @@ export class User extends Model {
   public email!: string;
   public phoneNumber!: string;
   public password!: string;
-  public refreshToken?: string;
+  // public refreshToken?: string;
   public role!: 'user'| 'admin' | 'superadmin';
 }
 
@@ -36,10 +36,10 @@ User.init(
       type: DataTypes.STRING,
       allowNull: false,
     },
-    refreshToken: {
-    type: DataTypes.TEXT,
-    allowNull: true,
-    },
+    // refreshToken: {
+    // type: DataTypes.TEXT,
+    // allowNull: true,
+    // },
     role: {
       type: DataTypes.ENUM('user', 'admin', 'superadmin'),
       allowNull: false,
