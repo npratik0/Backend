@@ -10,7 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 export const register = async (req:Request, res:Response) => {
     try{
-        const {fullName, email, phoneNumber, password, confirmPassword} = req.body;
+        const {fullName, email, phoneNumber, password} = req.body;
 
         // if(!fullName || !email || !phoneNumber || !password || !confirmPassword){
         //     return res.status(400).json({
@@ -139,7 +139,7 @@ export const login = async (req:Request, res:Response) => {
 
         return res.status(200).json({
             message: "Login Sucessfull",
-            accesstoken: accesstoken,
+            accessToken: accesstoken,
             // refreshtoken: refreshToken,
             user: {
                 id: user.id,

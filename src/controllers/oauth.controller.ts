@@ -51,14 +51,14 @@ export const googleCallback = async (req: Request, res: Response) => {
     });
 
     // redirect to frontend with accessToken
-    // return res.redirect(
-    //   `${process.env.FRONTEND_URL}/auth/callback?token=${accessToken}`
-    // );
+    return res.redirect(
+      `${process.env.FRONTEND_URL}/auth/callback?token=${accessToken}`
+    );
 
-    return res.json({
-  message: "OAuth login successful",
-  accessToken,
-});
+    // return res.json({
+    // message: "OAuth login successful",
+    // accessToken,
+    // });
   } catch (error) {
     return res.redirect(
       `${process.env.FRONTEND_URL}/login?error=Server error`

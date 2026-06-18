@@ -5,6 +5,7 @@ import adminRoutes from "./routes/admin.routes";
 import sessionRoutes from "./routes/session.routes";
 import { startCleanupJob } from "./jobs/cleanup.jobs";
 import passport from "passport";
+import cors from "cors"
 
 import cookieParser from "cookie-parser";
 
@@ -15,6 +16,22 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(passport.initialize());
 
+
+// app.use(cors({
+//   origin: "http://localhost:3000",
+//   credentials: true,
+//   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+//   allowedHeaders: ["Content-Type", "Authorization"],
+// }));
+
+// app.options("*", cors());
+
+app.use(cors({
+  origin: "http://localhost:3000",
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE","PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
