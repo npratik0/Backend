@@ -1,16 +1,20 @@
-import { Request, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { Session } from "../models/session.model";
 import { generateToken, generateRefreshToken } from "../utils/jwt";
 import { User } from "../models/user.model";
 
-export const googleCallback = async (req: Request, res: Response) => {
+export const googleCallback = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
   try {
     const user = req.user as User;
 
     if (!user) {
       return res.redirect(
-        `${process.env.FRONTEND_URL}/login?error=OAuth failed`
+        `${process.env.FRONTEND_URL}/login?error=OAuth failed`,
       );
     }
 
@@ -27,32 +31,33 @@ export const googleCallback = async (req: Request, res: Response) => {
       ip: req.ip,
       device: req.headers["user-agent"] || "unknown",
       expiresAt,
+      status: "active",
     });
 
     res.cookie("sessionId", sessionId, {
       httpOnly: true,
-      secure: false,        
+      secure: false,
       sameSite: "strict",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-      res.cookie("accessToken", accessToken, {
-        httpOnly: true,
-        secure: false,       
-        sameSite: "strict",
-        maxAge: 15 * 60 * 1000, 
-      });
+    res.cookie("accessToken", accessToken, {
+      httpOnly: true,
+      secure: false,
+      sameSite: "strict",
+      maxAge: 15 * 60 * 1000,
+    });
 
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      secure: false,        
+      secure: false,
       sameSite: "strict",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     // redirect to frontend with accessToken
     return res.redirect(
-      `${process.env.FRONTEND_URL}/auth/callback?token=${accessToken}`
+      `${process.env.FRONTEND_URL}/auth/callback?token=${accessToken}`,
     );
 
     // return res.json({
@@ -60,8 +65,6 @@ export const googleCallback = async (req: Request, res: Response) => {
     // accessToken,
     // });
   } catch (error) {
-    return res.redirect(
-      `${process.env.FRONTEND_URL}/login?error=Server error`
-    );
+    return res.redirect(`${process.env.FRONTEND_URL}/login?error=Server error`);
   }
 };

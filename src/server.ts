@@ -1,6 +1,11 @@
 import dotenv from "dotenv";
 import app from "./app";
 import { connectDB, sequelize } from "./config/db";
+import "./models/deviceInfo.model";
+import "./models/requestLog.model";
+import "./models/errorLog.model";
+import "./models/endpointMetrics.model";
+import "./models/systemHealth.model";
 
 dotenv.config();
 
