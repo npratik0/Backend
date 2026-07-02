@@ -7,6 +7,7 @@ import { EndpointMetrics } from "../models/endpointMetrics.model";
 import { SystemHealth } from "../models/systemHealth.model";
 import os from "os";
 import { sequelize } from "../config/db";
+import { DeviceApproval } from "../models/deviceApproval.model";
 
 export const startCleanupJob = () => {
   cron.schedule("*/10 * * * *", async () => {
@@ -134,6 +135,28 @@ export const startCleanupJob = () => {
       });
     } catch (err) {
       console.error("[Health] Snapshot failed:", err);
+    }
+  });
+
+  cron.schedule("*/5 * * * *", async () => {
+    try {
+      const expired = await DeviceApproval.findAll({
+        where: { status: "pending", expiresAt: { [Op.lt]: new Date() } },
+      });
+
+      for (const approval of expired) {
+        await Session.update(
+          { status: "expired" },
+          { where: { id: approval.sessionId } },
+        );
+        await approval.update({ status: "rejected" });
+      }
+
+      if (expired.length > 0) {
+        console.log(`[Cleanup] Expired ${expired.length} device approval(s)`);
+      }
+    } catch (err) {
+      console.error("[Cleanup] Device approval expiry failed:", err);
     }
   });
 

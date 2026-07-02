@@ -18,16 +18,24 @@ export class DeviceInfo extends Model {
 DeviceInfo.init(
   {
     id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
-    ip:             { type: DataTypes.STRING,  allowNull: false },
-    device:         { type: DataTypes.STRING,  allowNull: false, defaultValue: "Unknown" },
-    browser:        { type: DataTypes.STRING,  allowNull: false, defaultValue: "Unknown" },
-    browserVersion: { type: DataTypes.STRING,  allowNull: true },
-    os:             { type: DataTypes.STRING,  allowNull: false, defaultValue: "Unknown" },
-    osVersion:      { type: DataTypes.STRING,  allowNull: true },
-    country:        { type: DataTypes.STRING,  allowNull: true },
-    city:           { type: DataTypes.STRING,  allowNull: true },
-    fingerprint:    { type: DataTypes.STRING,  allowNull: false },
-    userAgent:      { type: DataTypes.TEXT,    allowNull: true },
+    ip: { type: DataTypes.STRING, allowNull: false },
+    device: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: "Unknown",
+    },
+    browser: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: "Unknown",
+    },
+    browserVersion: { type: DataTypes.STRING, allowNull: true },
+    os: { type: DataTypes.STRING, allowNull: false, defaultValue: "Unknown" },
+    osVersion: { type: DataTypes.STRING, allowNull: true },
+    country: { type: DataTypes.STRING, allowNull: true },
+    city: { type: DataTypes.STRING, allowNull: true },
+    fingerprint: { type: DataTypes.STRING, allowNull: false },
+    userAgent: { type: DataTypes.TEXT, allowNull: true },
   },
-  { sequelize, tableName: "device_info", timestamps: true }
+  { sequelize, tableName: "device_info", timestamps: true },
 );
