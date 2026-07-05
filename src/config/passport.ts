@@ -29,7 +29,7 @@ passport.use(
 
         user = await User.findOne({ where: { email } });
         if (user) {
-          await user.update({ googleId });
+          await user.update({ googleId, isVerified: true });
           return done(null, user);
         }
 
@@ -40,6 +40,7 @@ passport.use(
           role: "user",
           password: null,
           phoneNumber: null,
+          isVerified: true,
         });
 
         return done(null, user);

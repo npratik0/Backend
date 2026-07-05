@@ -94,7 +94,6 @@ export const googleCallback = async (
       );
     }
 
-    // ── Parse device info (same as regular login) ─────────────────────────────
     const ip = normalizeIp(req.ip);
     const userAgent = req.headers["user-agent"] ?? "";
     const parsed = parseDevice(userAgent);

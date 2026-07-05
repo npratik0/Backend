@@ -1,10 +1,10 @@
-import { NextFunction, Request, response, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import { User } from "../models/user.model";
 import { comparePassword, hashPassword } from "../utils/hash";
 import { generateRefreshToken, generateToken } from "../utils/jwt";
 import jwt from "jsonwebtoken";
 import { sendEmail } from "../utils/mailer";
-import { Otp } from "../models/otp.models";
+import { Otp, OtpType } from "../models/otp.models";
 import { Session } from "../models/session.model";
 import { v4 as uuidv4 } from "uuid";
 import { getLocation, normalizeIp, parseDevice } from "../utils/device";
@@ -16,6 +16,97 @@ import { DeviceApproval } from "../models/deviceApproval.model";
 const SESSION_EXPIRY_DAYS = 7;
 const APPROVAL_TIMEOUT_MINUTES = 10;
 const INACTIVITY_WINDOW_MINUTES = 30;
+const OTP_EXPIRY_MINUTES = 10;
+
+const createAndSendOtp = async (email: string, type: OtpType): Promise<void> => {
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+  await Otp.destroy({ where: { email, type } });
+  await Otp.create({ email, otp, type, expiresAt });
+
+  const subject =
+    type === "email_verification" ? "Verify your Karya account" : "Password Reset OTP";
+  const text =
+    type === "email_verification"
+      ? `Your Karya verification code is: ${otp}. It is valid for ${OTP_EXPIRY_MINUTES} minutes.`
+      : `Your OTP is: ${otp}. It is valid for ${OTP_EXPIRY_MINUTES} minutes.`;
+
+  await sendEmail(email, subject, text);
+};
+
+// Registers the device this request came from as trusted and opens an active
+// session for the user — used right after email verification and after
+// Google OAuth, where the identity has already been proven out-of-band.
+const establishTrustedSession = async (req: Request, res: Response, user: User) => {
+  const ip = normalizeIp(req.ip);
+  const userAgent = req.headers["user-agent"] ?? "";
+  const parsed = parseDevice(userAgent);
+  const location = getLocation(ip);
+
+  const deviceInfo = await DeviceInfo.create({
+    ip,
+    device: parsed.device,
+    browser: parsed.browser,
+    browserVersion: parsed.browserVersion,
+    os: parsed.os,
+    osVersion: parsed.osVersion,
+    country: location.country,
+    city: location.city,
+    fingerprint: parsed.fingerprint,
+    userAgent,
+  });
+
+  await TrustedDevice.findOrCreate({
+    where: { userId: user.id, fingerprint: parsed.fingerprint },
+    defaults: {
+      userId: user.id,
+      deviceInfoId: deviceInfo.id,
+      fingerprint: parsed.fingerprint,
+      lastSeenAt: new Date(),
+    },
+  });
+
+  const accessToken = generateToken(user.id, user.role);
+  const refreshToken = generateRefreshToken(user.id, user.role);
+  const sessionId = uuidv4();
+  const expiresAt = new Date(Date.now() + SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+
+  await Session.create({
+    id: sessionId,
+    userId: user.id,
+    deviceInfoId: deviceInfo.id,
+    refreshToken,
+    status: "active",
+    fingerprint: parsed.fingerprint,
+    lastActiveAt: new Date(),
+    expiresAt,
+  });
+
+  const cookieOptions = {
+    httpOnly: true,
+    secure: false,
+    sameSite: "strict" as const,
+    maxAge: SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
+  };
+  res.cookie("sessionId", sessionId, cookieOptions);
+  res.cookie("refreshToken", refreshToken, cookieOptions);
+
+  return accessToken;
+};
+
+const serializeUser = (user: User) => ({
+  id: user.id,
+  fullName: user.fullName,
+  email: user.email,
+  phoneNumber: user.phoneNumber,
+  role: user.role,
+  isVerified: user.isVerified,
+  preferredServices: user.preferredServices,
+  budgetRange: user.budgetRange,
+  preferredTiming: user.preferredTiming,
+  onboardingCompletedAt: user.onboardingCompletedAt,
+});
 
 export const register = async (
   req: Request,
@@ -25,39 +116,14 @@ export const register = async (
   try {
     const { fullName, email, phoneNumber, password } = req.body;
 
-    // if(!fullName || !email || !phoneNumber || !password || !confirmPassword){
-    //     return res.status(400).json({
-    //         message: "All fields required"
-    //     })
-    // }
-    // if(password != confirmPassword){
-    //     return res.status(400).json({
-    //         message: "Passwords don't match",
-    //     })
-    // }
-
-    const existingUser = await User.findOne({
-      where: {
-        email,
-      },
-    });
-
+    const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
-      return res.status(409).json({
-        message: "Email already exists",
-      });
+      return res.status(409).json({ message: "Email already exists" });
     }
 
-    const existingPhone = await User.findOne({
-      where: {
-        phoneNumber,
-      },
-    });
-
+    const existingPhone = await User.findOne({ where: { phoneNumber } });
     if (existingPhone) {
-      return res.status(409).json({
-        message: "Phone Number already exists",
-      });
+      return res.status(409).json({ message: "Phone Number already exists" });
     }
 
     const hashedPassword = await hashPassword(password);
@@ -68,182 +134,66 @@ export const register = async (
       phoneNumber,
       password: hashedPassword,
       role: "user",
+      isVerified: false,
     });
 
+    await createAndSendOtp(email, "email_verification");
+
     return res.status(201).json({
-      message: "User Created Sucessfully",
-      user: {
-        id: user.id,
-        fullName: user.fullName,
-        email: user.email,
-        phoneNumber: user.phoneNumber,
-        role: user.role,
-      },
+      message: "Account created. Verification code sent to your email.",
+      requiresVerification: true,
+      email: user.email,
     });
   } catch (error) {
-    // return res.status(500).json({
-    //   message: "Internal Server Error",
-    // });
     next(error);
   }
 };
 
-// export const login = async (
-//   req: Request,
-//   res: Response,
-//   next: NextFunction,
-// ) => {
-//   try {
-//     const { email, password } = req.body;
+export const verifyEmail = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const { email, otp } = req.body;
 
-//     if (!email || !password) {
-//       return res.status(400).json({
-//         message: "All fields are required",
-//       });
-//     }
+    const user = await User.findOne({ where: { email } });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-//     const user = await User.findOne({
-//       where: { email },
-//     });
+    if (user.isVerified) {
+      return res.status(400).json({ message: "Account is already verified" });
+    }
 
-//     if (!user) {
-//       return res.status(400).json({
-//         message: "Invalid Credintials",
-//       });
-//     }
+    const record = await Otp.findOne({
+      where: { email, type: "email_verification" },
+    });
+    if (!record) {
+      return res.status(400).json({ message: "Code not found or already used" });
+    }
+    if (new Date() > record.expiresAt) {
+      await record.destroy();
+      return res.status(400).json({ message: "Code expired" });
+    }
+    if (record.otp !== otp) {
+      return res.status(400).json({ message: "Invalid code" });
+    }
 
-//     const passwordCheck = await comparePassword(password, user.password);
-//     if (!passwordCheck) {
-//       return res.status(400).json({
-//         message: "Invalid Credintials",
-//       });
-//     }
+    await user.update({ isVerified: true });
+    await record.destroy();
 
-//     const ip = normalizeIp(req.ip);
-//     const userAgent = req.headers["user-agent"] ?? "";
-//     const parsed = parseDevice(userAgent);
-//     const location = getLocation(ip);
+    const accessToken = await establishTrustedSession(req, res, user);
 
-//     const deviceInfo = await DeviceInfo.create({
-//       ip,
-//       device: parsed.device,
-//       browser: parsed.browser,
-//       browserVersion: parsed.browserVersion,
-//       os: parsed.os,
-//       osVersion: parsed.osVersion,
-//       country: location.country,
-//       city: location.city,
-//       fingerprint: parsed.fingerprint,
-//       userAgent,
-//     });
-
-//     const trustedDevice = await TrustedDevice.findOne({
-//       where: { userId: user.id, fingerprint: parsed.fingerprint },
-//     });
-
-//     const refreshToken = generateRefreshToken(user.id, user.role);
-
-//     const sessionId = uuidv4();
-//     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-//     if (trustedDevice) {
-//       await trustedDevice.update({
-//         lastSeenAt: new Date(),
-//         deviceInfoId: deviceInfo.id,
-//       });
-
-//       const accesstoken = generateToken(user.id, user.role);
-
-//       await Session.create({
-//         id: sessionId,
-//         userId: user.id,
-//         deviceInfoId: deviceInfo.id,
-//         refreshToken,
-//         status: "active",
-//         fingerprint: parsed.fingerprint,
-//         lastActiveAt: new Date(),
-//         expiresAt,
-//       });
-
-//       res.cookie("sessionId", sessionId, {
-//         httpOnly: true,
-//         secure: false,
-//         sameSite: "strict",
-//         maxAge: SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
-//       });
-
-//       res.cookie("refreshToken", refreshToken, {
-//         httpOnly: true,
-//         secure: false,
-//         sameSite: "strict",
-//         maxAge: SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
-//       });
-
-//       return res.status(200).json({
-//         message: "Login Sucessfull",
-//         accessToken: accesstoken,
-//         refreshToken: refreshToken,
-//         user: {
-//           id: user.id,
-//           fullName: user.fullName,
-//           email: user.email,
-//           phoneNumber: user.phoneNumber,
-//           role: user.role,
-//         },
-//       });
-//     }
-
-//     // Unrecognized Deivce
-//     const activeSessionCount = await Session.count({
-//       where: {
-//         userId: user.id,
-//         status: "active",
-//         expiresAt: { [Op.gt]: new Date() },
-//         lastActiveAt: {
-//           [Op.gt]: new Date(Date.now() - INACTIVITY_WINDOW_MINUTES * 60 * 1000),
-//         },
-//       },
-//     });
-//     const recoveryRequired = activeSessionCount === 0;
-
-//     await Session.create({
-//       id: sessionId,
-//       userId: user.id,
-//       deviceInfoId: deviceInfo.id,
-//       refreshToken,
-//       status: "pending",
-//       fingerprint: parsed.fingerprint,
-//       lastActiveAt: new Date(),
-//       expiresAt,
-//     });
-
-//     await DeviceApproval.create({
-//       sessionId,
-//       userId: user.id,
-//       status: "pending",
-//       expiresAt: new Date(Date.now() + APPROVAL_TIMEOUT_MINUTES * 60 * 1000),
-//     });
-
-//     return res.status(202).json({
-//       message: recoveryRequired
-//         ? "New device detected. No trusted device available — verify via email."
-//         : "New device detected. Approval required from a trusted device.",
-//       requiresVerification: true,
-//       recoveryRequired,
-//       sessionId,
-//       deviceInfo: {
-//         browser: parsed.browser,
-//         os: parsed.os,
-//         ip,
-//         city: location.city,
-//         country: location.country,
-//       },
-//     });
-//   } catch (error) {
-//     console.error("LOGIN ERROR:", error);
-//     next(error);
-//   }
-// };
+    return res.status(200).json({
+      message: "Email verified successfully",
+      accessToken,
+      user: serializeUser(user),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 export const login = async (
   req: Request,
@@ -265,6 +215,15 @@ export const login = async (
     const passwordCheck = await comparePassword(password, user.password);
     if (!passwordCheck) {
       return res.status(400).json({ message: "Invalid Credentials" });
+    }
+
+    if (!user.isVerified) {
+      await createAndSendOtp(email, "email_verification");
+      return res.status(403).json({
+        message: "Please verify your email to continue",
+        code: "EMAIL_NOT_VERIFIED",
+        email: user.email,
+      });
     }
 
     const ip = normalizeIp(req.ip);
@@ -330,13 +289,7 @@ export const login = async (
       return res.status(200).json({
         message: "Login Successful",
         accessToken,
-        user: {
-          id: user.id,
-          fullName: user.fullName,
-          email: user.email,
-          phoneNumber: user.phoneNumber,
-          role: user.role,
-        },
+        user: serializeUser(user),
       });
     }
 
@@ -400,7 +353,6 @@ export const login = async (
       },
     });
   } catch (error) {
-    console.error("LOGIN ERROR:", error);
     next(error);
   }
 };
@@ -418,44 +370,50 @@ export const getProfile = async (
     const id = req.auth.userId;
 
     const user = await User.findByPk(id, {
-      attributes: {
-        exclude: ["password"],
-      },
+      attributes: { exclude: ["password"] },
     });
 
     if (!user) {
-      return res.status(404).json({
-        message: "User not found",
-      });
+      return res.status(404).json({ message: "User not found" });
     }
 
-    return res.json({
-      user,
-    });
+    return res.json({ user });
   } catch (error) {
-    // return res.status(500).json({
-    //   message: "Internal Server Error",
-    // });
     next(error);
   }
 };
 
-// const otpStore = new Map<string, { otp: string; expires: number }>();
+export const updateOnboarding = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    if (!req.auth) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
 
-const OTP_EXPIRY_MINUTES = 10;
+    const { services, budget, timing } = req.body;
 
-const createAndSendOtp = async (email: string): Promise<void> => {
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+    const user = await User.findByPk(req.auth.userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-  await Otp.destroy({ where: { email } });
-  await Otp.create({ email, otp, type: "password_reset", expiresAt });
+    await user.update({
+      preferredServices: services,
+      budgetRange: budget,
+      preferredTiming: timing,
+      onboardingCompletedAt: new Date(),
+    });
 
-  await sendEmail(
-    email,
-    "Password Reset OTP",
-    `Your OTP is: ${otp}. It is valid for ${OTP_EXPIRY_MINUTES} minutes.`,
-  );
+    return res.json({
+      message: "Onboarding complete",
+      user: serializeUser(user),
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 export const forgotPassword = async (
@@ -471,11 +429,10 @@ export const forgotPassword = async (
     const user = await User.findOne({ where: { email } });
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    await createAndSendOtp(email);
+    await createAndSendOtp(email, "password_reset");
 
     return res.json({ message: "OTP sent to email" });
   } catch (error) {
-    // return res.status(500).json({ message: "INternal Server error", error });
     next(error);
   }
 };
@@ -487,17 +444,22 @@ export const resendOtp = async (
 ) => {
   try {
     const { email } = req.body;
+    const type: OtpType =
+      req.body.type === "email_verification" ? "email_verification" : "password_reset";
 
     if (!email) return res.status(400).json({ message: "Email is required" });
 
     const user = await User.findOne({ where: { email } });
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    await createAndSendOtp(email);
+    if (type === "email_verification" && user.isVerified) {
+      return res.status(400).json({ message: "Account is already verified" });
+    }
 
-    return res.json({ message: "OTP resent to email" });
+    await createAndSendOtp(email, type);
+
+    return res.json({ message: "Code resent to email" });
   } catch (error) {
-    // return res.status(500).json({ message: "Internal Server error", error });
     next(error);
   }
 };
@@ -514,7 +476,7 @@ export const resetPassword = async (
       return res.status(400).json({ message: "All fields are required" });
     }
 
-    const record = await Otp.findOne({ where: { email } });
+    const record = await Otp.findOne({ where: { email, type: "password_reset" } });
 
     if (!record) {
       return res.status(400).json({ message: "OTP not found or already used" });
@@ -539,107 +501,9 @@ export const resetPassword = async (
 
     return res.json({ message: "Password reset successful" });
   } catch (error) {
-    // return res.status(500).json({ message: "Internal Server error" });
     next(error);
   }
 };
-
-// export const refreshAccessToken = async (
-//   req: Request,
-//   res: Response,
-//   next: NextFunction,
-// ) => {
-//   try {
-//     const sessionId = req.cookies.sessionId;
-//     const refreshToken = req.cookies.refreshToken;
-
-//     if (!sessionId || !refreshToken) {
-//       return res.status(401).json({ message: "No session found" });
-//     }
-
-//     const session = await Session.findOne({
-//       where: { id: sessionId, refreshToken },
-//     });
-
-//     if (!session) {
-//       res.clearCookie("sessionId");
-//       res.clearCookie("refreshToken");
-//       return res
-//         .status(403)
-//         .json({ message: "Invalid session. Please login again" });
-//     }
-
-//     if (new Date() > session.expiresAt) {
-//       await session.destroy();
-//       res.clearCookie("sessionId");
-//       res.clearCookie("refreshToken");
-//       return res
-//         .status(403)
-//         .json({ message: "Session expired. Please login again" });
-//     }
-
-//     if (session.status !== "active") {
-//       return res
-//         .status(403)
-//         .json({ message: "Session not yet verified", code: "SESSION_PENDING" });
-//     }
-
-//     let decoded: any;
-//     try {
-//       decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!);
-//     } catch (err) {
-//       await session.destroy();
-//       res.clearCookie("sessionId");
-//       res.clearCookie("refreshToken");
-//       return res
-//         .status(403)
-//         .json({ message: "Invalid token. Please login again" });
-//     }
-
-//     const user = await User.findByPk(decoded.userId);
-//     if (!user) {
-//       return res.status(404).json({ message: "User not found" });
-//     }
-
-//     await session.destroy();
-
-//     const newAccessToken = generateToken(user.id, user.role);
-//     const newRefreshToken = generateRefreshToken(user.id, user.role);
-//     const newSessionId = uuidv4();
-//     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-//     await Session.create({
-//       id: newSessionId,
-//       userId: user.id,
-//       deviceInfoId: session.deviceInfoId,
-//       refreshToken: newRefreshToken,
-//       status: "active",
-//       fingerprint: session.fingerprint,
-//       lastActiveAt: new Date(),
-//       expiresAt,
-//     });
-
-//     res.cookie("sessionId", newSessionId, {
-//       httpOnly: true,
-//       secure: false,
-//       sameSite: "strict",
-//       maxAge: 7 * 24 * 60 * 60 * 1000,
-//     });
-
-//     res.cookie("refreshToken", newRefreshToken, {
-//       httpOnly: true,
-//       secure: false,
-//       sameSite: "strict",
-//       maxAge: 7 * 24 * 60 * 60 * 1000,
-//     });
-
-//     return res.status(200).json({ accessToken: newAccessToken });
-//   } catch (error) {
-//     // return res.status(500).json({ message: "Internal Server Error" });
-//     console.error("[refreshAccessToken] ERROR:", error);
-//     next(error);
-//   }
-// };
 
 export const refreshAccessToken = async (
   req: Request,
@@ -760,13 +624,8 @@ export const logout = async (
     res.clearCookie("sessionId");
     res.clearCookie("refreshToken");
 
-    return res.json({
-      message: "Logged out successfully",
-    });
+    return res.json({ message: "Logged out successfully" });
   } catch (error) {
-    // return res.status(500).json({
-    //   message: "Internal Server Error",
-    // });
     next(error);
   }
 };
@@ -777,11 +636,8 @@ export const logoutAll = async (
   next: NextFunction,
 ) => {
   try {
-    console.log(req.body);
     if (!req.auth) {
-      return res.status(401).json({
-        message: "Unauthorized",
-      });
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
     const userId = req.auth.userId;
@@ -791,13 +647,8 @@ export const logoutAll = async (
     res.clearCookie("sessionId");
     res.clearCookie("refreshToken");
 
-    return res.json({
-      message: "Logged out from all devices successfully",
-    });
+    return res.json({ message: "Logged out from all devices successfully" });
   } catch (error) {
-    // return res.status(500).json({
-    //   message: "Internal Server Error",
-    // });
     next(error);
   }
 };
