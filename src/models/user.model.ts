@@ -8,8 +8,14 @@ export class User extends Model {
   public phoneNumber!: string;
   public password!: string;
   // public refreshToken?: string;
-  public role!: 'user'| 'admin' | 'superadmin';
+  public role!: 'user'| 'provider' | 'admin' | 'superadmin';
   public googleId!: string | null;
+  public isVerified!: boolean;
+  public preferredServices!: string[] | null;
+  public budgetRange!: string | null;
+  public preferredTiming!: string[] | null;
+  public onboardingCompletedAt!: Date | null;
+  public loyaltyCredits!: number;
 }
 
 User.init(
@@ -42,7 +48,7 @@ User.init(
     // allowNull: true,
     // },
     role: {
-      type: DataTypes.ENUM('user', 'admin', 'superadmin'),
+      type: DataTypes.ENUM('user', 'provider', 'admin', 'superadmin'),
       allowNull: false,
       defaultValue: 'user'
     },
@@ -50,7 +56,33 @@ User.init(
       type: DataTypes.STRING,
       allowNull: true,
       unique: true
-    }
+    },
+    isVerified: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    preferredServices: {
+      type: DataTypes.ARRAY(DataTypes.STRING),
+      allowNull: true,
+    },
+    budgetRange: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    preferredTiming: {
+      type: DataTypes.ARRAY(DataTypes.STRING),
+      allowNull: true,
+    },
+    onboardingCompletedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    loyaltyCredits: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 150,
+    },
   },
   {
     sequelize,

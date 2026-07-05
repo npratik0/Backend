@@ -30,6 +30,22 @@ export const forgotPasswordSchema = z.object({
   email: z.string().min(1, "Email is required"),
 });
 
+export const verifyEmailSchema = z.object({
+  email: z.email("Invalid email"),
+  otp: z.string().regex(/^\d{6}$/, "Code must be 6 digits"),
+});
+
+export const resendOtpSchema = z.object({
+  email: z.email("Invalid email"),
+  type: z.enum(["email_verification", "password_reset"]).optional(),
+});
+
+export const onboardingSchema = z.object({
+  services: z.array(z.string()).min(1, "Select at least one service"),
+  budget: z.string().min(1, "Budget is required"),
+  timing: z.array(z.string()).min(1, "Select at least one time preference"),
+});
+
 export const resetPasswordSchema = z.object({
   email: z.string().min(1, "Email is required"),
   otp: z.string().regex(/^\d{6}$/, "OTP must be 6 digits"),
