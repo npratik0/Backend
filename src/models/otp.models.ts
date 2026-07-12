@@ -1,7 +1,7 @@
 import { DataTypes, Model } from "sequelize";
 import { sequelize } from "../config/db";
 
-export type OtpType = "password_reset" | "device_recovery";
+export type OtpType = "password_reset" | "device_recovery" | "email_verification";
 
 export class Otp extends Model {
   public id!: number;
@@ -32,7 +32,7 @@ Otp.init(
       allowNull: false,
     },
     type: {
-      type: DataTypes.ENUM("password_reset", "device_recovery"),
+      type: DataTypes.ENUM("password_reset", "device_recovery", "email_verification"),
       allowNull: false,
       defaultValue: "password_reset",
     },
